@@ -4,6 +4,7 @@ import simpledb.common.Database;
 import simpledb.common.DbException;
 import simpledb.common.Type;
 import simpledb.storage.DbFileIterator;
+import simpledb.storage.HeapFile;
 import simpledb.storage.Tuple;
 import simpledb.storage.TupleDesc;
 import simpledb.transaction.TransactionAbortedException;
@@ -20,6 +21,16 @@ public class SeqScan implements OpIterator {
 
     private static final long serialVersionUID = 1L;
 
+    private final TransactionId transactionId;
+
+    private int tableId;
+
+    private String tableAlias;
+
+    private HeapFile heapFile;
+
+    private DbFileIterator iterator;
+
     /**
      * Creates a sequential scan over the specified table as a part of the
      * specified transaction.
@@ -34,23 +45,26 @@ public class SeqScan implements OpIterator {
      *                   tableAlias.null, or null.null).
      */
     public SeqScan(TransactionId tid, int tableid, String tableAlias) {
-        // TODO: some code goes here
+        this.transactionId = tid;
+        this.tableId = tableid;
+        this.tableAlias = tableAlias;
+        this.heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableid);
+        this.iterator = this.heapFile.iterator(transactionId);
     }
 
     /**
      * @return return the table name of the table the operator scans. This should
-     *         be the actual name of the table in the catalog of the database
+     * be the actual name of the table in the catalog of the database
      */
     public String getTableName() {
-        return null;
+        return Database.getCatalog().getTableName(tableId);
     }
 
     /**
      * @return Return the alias of the table this operator scans.
      */
     public String getAlias() {
-        // TODO: some code goes here
-        return null;
+        return tableAlias;
     }
 
     /**
@@ -65,7 +79,10 @@ public class SeqScan implements OpIterator {
      *                   tableAlias.null, or null.null).
      */
     public void reset(int tableid, String tableAlias) {
-        // TODO: some code goes here
+        this.tableId = tableid;
+        this.tableAlias = tableAlias;
+        this.heapFile = (HeapFile) Database.getCatalog().getDatabaseFile(tableid);
+        this.iterator = this.heapFile.iterator(transactionId);
     }
 
     public SeqScan(TransactionId tid, int tableId) {
@@ -73,7 +90,7 @@ public class SeqScan implements OpIterator {
     }
 
     public void open() throws DbException, TransactionAbortedException {
-        // TODO: some code goes here
+        iterator.open();
     }
 
     /**
@@ -84,30 +101,34 @@ public class SeqScan implements OpIterator {
      * (e.g., "alias.fieldName").
      *
      * @return the TupleDesc with field names from the underlying HeapFile,
-     *         prefixed with the tableAlias string from the constructor.
+     * prefixed with the tableAlias string from the constructor.
      */
     public TupleDesc getTupleDesc() {
-        // TODO: some code goes here
-        return null;
+        TupleDesc tupleDesc = Database.getCatalog().getTupleDesc(tableId);
+        Type[] types = new Type[tupleDesc.numFields()];
+        String[] fields = new String[tupleDesc.numFields()];
+        for (int i = 0; i < tupleDesc.numFields(); i++) {
+            types[i] = tupleDesc.getFieldType(i);
+            fields[i] = tableAlias + "." + tupleDesc.getFieldName(i);
+        }
+        return new TupleDesc(types, fields);
     }
 
     public boolean hasNext() throws TransactionAbortedException, DbException {
-        // TODO: some code goes here
-        return false;
+        return iterator.hasNext();
     }
 
     public Tuple next() throws NoSuchElementException,
             TransactionAbortedException, DbException {
-        // TODO: some code goes here
-        return null;
+        return iterator.next();
     }
 
     public void close() {
-        // TODO: some code goes here
+        iterator.close();
     }
 
     public void rewind() throws DbException, NoSuchElementException,
             TransactionAbortedException {
-        // TODO: some code goes here
+        iterator.rewind();
     }
 }
