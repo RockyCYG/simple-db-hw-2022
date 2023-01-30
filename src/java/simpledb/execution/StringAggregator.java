@@ -1,7 +1,11 @@
 package simpledb.execution;
 
+import simpledb.common.DbException;
 import simpledb.common.Type;
-import simpledb.storage.Tuple;
+import simpledb.storage.*;
+import simpledb.transaction.TransactionAbortedException;
+
+import java.util.*;
 
 /**
  * Knows how to compute some aggregate over a set of StringFields.
@@ -9,6 +13,16 @@ import simpledb.storage.Tuple;
 public class StringAggregator implements Aggregator {
 
     private static final long serialVersionUID = 1L;
+
+    private final int gbfield;
+
+    private final Type gbfieldtype;
+
+    private final int afield;
+
+    private final Op what;
+
+    private Map<Field, Integer> countMap;
 
     /**
      * Aggregate constructor
@@ -21,7 +35,11 @@ public class StringAggregator implements Aggregator {
      */
 
     public StringAggregator(int gbfield, Type gbfieldtype, int afield, Op what) {
-        // TODO: some code goes here
+        this.gbfield = gbfield;
+        this.gbfieldtype = gbfieldtype;
+        this.afield = afield;
+        this.what = what;
+        this.countMap = new HashMap<>();
     }
 
     /**
@@ -30,20 +48,82 @@ public class StringAggregator implements Aggregator {
      * @param tup the Tuple containing an aggregate field and a group-by field
      */
     public void mergeTupleIntoGroup(Tuple tup) {
-        // TODO: some code goes here
+        Field field = gbfield == NO_GROUPING ? null : tup.getField(gbfield);
+        countMap.merge(field, 1, Integer::sum);
     }
 
     /**
      * Create a OpIterator over group aggregate results.
      *
      * @return a OpIterator whose tuples are the pair (groupVal,
-     *         aggregateVal) if using group, or a single (aggregateVal) if no
-     *         grouping. The aggregateVal is determined by the type of
-     *         aggregate specified in the constructor.
+     * aggregateVal) if using group, or a single (aggregateVal) if no
+     * grouping. The aggregateVal is determined by the type of
+     * aggregate specified in the constructor.
      */
     public OpIterator iterator() {
-        // TODO: some code goes here
-        throw new UnsupportedOperationException("please implement me for lab2");
+        return new StringAggregatorIterator();
+    }
+
+    private class StringAggregatorIterator implements OpIterator {
+
+        private TupleIterator iterator;
+
+        private TupleDesc tupleDesc;
+
+        public StringAggregatorIterator() {
+            if (gbfield == NO_GROUPING) {
+                this.tupleDesc = new TupleDesc(new Type[]{Type.INT_TYPE}, new String[]{"aggregateVal"});
+                List<Tuple> tuples = new ArrayList<>();
+                for (Map.Entry<Field, Integer> entry : countMap.entrySet()) {
+                    Tuple tuple = new Tuple(tupleDesc);
+                    Integer value = entry.getValue();
+                    tuple.setField(0, new IntField(value));
+                    tuples.add(tuple);
+                }
+                this.iterator = new TupleIterator(tupleDesc, tuples);
+            } else {
+                this.tupleDesc = new TupleDesc(new Type[]{gbfieldtype, Type.INT_TYPE}, new String[]{"groupVal", "aggregateVal"});
+                List<Tuple> tuples = new ArrayList<>();
+                for (Map.Entry<Field, Integer> entry : countMap.entrySet()) {
+                    Tuple tuple = new Tuple(tupleDesc);
+                    Integer value = entry.getValue();
+                    tuple.setField(0, entry.getKey());
+                    tuple.setField(1, new IntField(value));
+                    tuples.add(tuple);
+                }
+                this.iterator = new TupleIterator(tupleDesc, tuples);
+            }
+        }
+
+        @Override
+        public void open() throws DbException, TransactionAbortedException {
+            iterator.open();
+        }
+
+        @Override
+        public boolean hasNext() throws DbException, TransactionAbortedException {
+            return iterator.hasNext();
+        }
+
+        @Override
+        public Tuple next() throws DbException, TransactionAbortedException, NoSuchElementException {
+            return iterator.next();
+        }
+
+        @Override
+        public void rewind() throws DbException, TransactionAbortedException {
+            iterator.rewind();
+        }
+
+        @Override
+        public TupleDesc getTupleDesc() {
+            return tupleDesc;
+        }
+
+        @Override
+        public void close() {
+            iterator.close();
+        }
     }
 
 }
