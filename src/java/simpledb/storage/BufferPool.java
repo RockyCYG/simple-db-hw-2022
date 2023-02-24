@@ -37,7 +37,9 @@ public class BufferPool {
 
     private int numPages;
 
-    private static Map<PageId, Page> pageCache;
+//    private static Map<PageId, Page> pageCache;
+
+    private static LRUCache<PageId, Page> lruCache;
 
     /**
      * Creates a BufferPool that caches up to numPages pages.
@@ -46,7 +48,7 @@ public class BufferPool {
      */
     public BufferPool(int numPages) {
         this.numPages = numPages;
-        pageCache = new HashMap<>();
+        lruCache = new LRUCache<>(numPages);
     }
 
     public static int getPageSize() {
@@ -80,11 +82,11 @@ public class BufferPool {
      */
     public Page getPage(TransactionId tid, PageId pid, Permissions perm)
             throws TransactionAbortedException, DbException {
-        Page page = pageCache.get(pid);
+        Page page = lruCache.get(pid);
         if (page == null) {
             DbFile dbFile = Database.getCatalog().getDatabaseFile(pid.getTableId());
             page = dbFile.readPage(pid);
-            pageCache.put(pid, page);
+            lruCache.put(pid, page);
         }
         return page;
     }
@@ -155,10 +157,10 @@ public class BufferPool {
         List<Page> dirtyPages = table.insertTuple(tid, t);
         for (Page page : dirtyPages) {
             page.markDirty(true, tid);
-            if (pageCache.size() > numPages) {
+            if (lruCache.isFull()) {
                 evictPage();
             }
-            pageCache.put(page.getId(), page);
+            lruCache.put(page.getId(), page);
         }
     }
 
@@ -182,10 +184,10 @@ public class BufferPool {
         List<Page> modifiedPages = table.deleteTuple(tid, t);
         for (Page page : modifiedPages) {
             page.markDirty(true, tid);
-            if (pageCache.size() > numPages) {
+            if (lruCache.isFull()) {
                 evictPage();
             }
-            pageCache.put(page.getId(), page);
+            lruCache.put(page.getId(), page);
         }
     }
 
@@ -195,7 +197,7 @@ public class BufferPool {
      * break simpledb if running in NO STEAL mode.
      */
     public synchronized void flushAllPages() throws IOException {
-        for (Page page : pageCache.values()) {
+        for (Page page : lruCache.values()) {
             flushPage(page.getId());
         }
     }
@@ -210,7 +212,7 @@ public class BufferPool {
      * are removed from the cache so they can be reused safely
      */
     public synchronized void removePage(PageId pid) {
-        pageCache.remove(pid);
+        lruCache.remove(pid);
     }
 
     /**
@@ -219,7 +221,7 @@ public class BufferPool {
      * @param pid an ID indicating the page to flush
      */
     private synchronized void flushPage(PageId pid) throws IOException {
-        Page page = pageCache.get(pid);
+        Page page = lruCache.get(pid);
         TransactionId tid = page.isDirty();
         if (tid != null) {
             Database.getLogFile().logWrite(tid, page.getBeforeImage(), page);
@@ -242,8 +244,7 @@ public class BufferPool {
      * Flushes the page to disk to ensure dirty pages are updated on disk.
      */
     private synchronized void evictPage() throws DbException {
-        int randomIndex = new Random().nextInt(pageCache.size());
-        PageId pageId = new ArrayList<>(pageCache.keySet()).get(randomIndex);
+        PageId pageId = lruCache.getLastPageId();
         try {
             flushPage(pageId);
         } catch (IOException e) {
